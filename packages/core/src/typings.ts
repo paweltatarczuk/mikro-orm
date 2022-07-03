@@ -657,6 +657,15 @@ export interface LoadedCollection<T> extends Collection<T> {
   getItems(check?: boolean): T[];
 }
 
+declare type RemovePrefix<K, P extends string> = K extends `${P}.${infer S}` ? S : never;
+declare type Nofix<K> = K extends `${string}.${string}` ? never : K;
+
+type Limited<T, F extends string = never> = [F] extends [never] ? T : {
+  [K in keyof T]: K extends Prefix<F> ? (K extends Nofix<F> ? T[K] : Limited<T[K], RemovePrefix<F, K>>) : (T[K] | undefined);
+};
+
+export type PartialLoaded<T, P extends string, F extends string = never> = [F] extends [never] ? Loaded<T, P> : Loaded<T, P> | Limited<Loaded<T, P>, F>;
+
 export type New<T extends AnyEntity<T>, P extends string = string> = Loaded<T, P>;
 
 export interface Highlighter {

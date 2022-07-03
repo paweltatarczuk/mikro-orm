@@ -5,7 +5,7 @@ import type { AssignOptions, EntityLoaderOptions, EntityRepository, IdentifiedRe
 import { EntityAssigner, EntityFactory, EntityLoader, EntityValidator, Reference } from './entity';
 import { ChangeSetType, UnitOfWork } from './unit-of-work';
 import type { CountOptions, DeleteOptions, EntityManagerType, FindOneOptions, FindOneOrFailOptions, FindOptions, IDatabaseDriver, LockOptions, NativeInsertUpdateOptions, UpdateOptions, GetReferenceOptions, EntityField } from './drivers';
-import type { AnyEntity, AutoPath, ConnectionType, Dictionary, EntityData, EntityDictionary, EntityDTO, EntityMetadata, EntityName, FilterDef, FilterQuery, GetRepository, Loaded, Populate, PopulateOptions, Primary, RequiredEntityData } from './typings';
+import type { AnyEntity, AutoPath, ConnectionType, Dictionary, EntityData, EntityDictionary, EntityDTO, EntityMetadata, EntityName, FilterDef, FilterQuery, GetRepository, Loaded, PartialLoaded, Populate, PopulateOptions, Primary, RequiredEntityData } from './typings';
 import { FlushMode, LoadStrategy, LockMode, PopulateHint, ReferenceType, SCALAR_TYPES } from './enums';
 import type { TransactionOptions } from './enums';
 import type { MetadataStorage } from './metadata';
@@ -93,11 +93,11 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
   /**
    * Finds all entities matching your `where` query. You can pass additional options via the `options` parameter.
    */
-  async find<T extends AnyEntity<T>, P extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOptions<T, P> = {}): Promise<Loaded<T, P>[]> {
+  async find<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOptions<T, P, F> = {}): Promise<PartialLoaded<T, P, F>[]> {
     if (options.disableIdentityMap) {
       const em = this.getContext(false);
       const fork = em.fork();
-      const ret = await fork.find<T, P>(entityName, where, { ...options, disableIdentityMap: false });
+      const ret = await fork.find<T, P, F>(entityName, where, { ...options, disableIdentityMap: false });
       fork.clear();
 
       return ret;
@@ -106,10 +106,10 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
     const em = this.getContext();
     await em.tryFlush(entityName, options);
     entityName = Utils.className(entityName);
-    where = await em.processWhere<T, P>(entityName, where, options, 'read');
+    where = await em.processWhere<T, P, F>(entityName, where, options, 'read');
     em.validator.validateParams(where);
     options.orderBy = options.orderBy || {};
-    options.populate = em.preparePopulate<T, P>(entityName, options) as unknown as Populate<T, P>;
+    options.populate = em.preparePopulate<T, P, F>(entityName, options) as unknown as Populate<T, P>;
     const populate = options.populate as unknown as PopulateOptions<T>[];
     const cached = await em.tryCache<T, Loaded<T, P>[]>(entityName, options.cache, [entityName, 'em.find', options, where], options.refresh, true);
 
@@ -125,7 +125,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
       return cached.data;
     }
 
-    const results = await em.driver.find<T, P>(entityName, where, { ctx: em.transactionContext, ...options });
+    const results = await em.driver.find<T, P, F>(entityName, where, { ctx: em.transactionContext, ...options });
 
     if (results.length === 0) {
       await em.storeCache(options.cache, cached!, []);
@@ -222,7 +222,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
     this.getContext(false).flushMode = flushMode;
   }
 
-  protected async processWhere<T extends AnyEntity<T>, P extends string = never>(entityName: string, where: FilterQuery<T>, options: FindOptions<T, P> | FindOneOptions<T, P>, type: 'read' | 'update' | 'delete'): Promise<FilterQuery<T>> {
+  protected async processWhere<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: string, where: FilterQuery<T>, options: FindOptions<T, P, F> | FindOneOptions<T, P, F>, type: 'read' | 'update' | 'delete'): Promise<FilterQuery<T>> {
     where = QueryHelper.processWhere({
       where: where as FilterQuery<T>,
       entityName,
@@ -332,11 +332,11 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
   /**
    * Finds first entity matching your `where` query.
    */
-  async findOne<T extends AnyEntity<T>, P extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOneOptions<T, P> = {}): Promise<Loaded<T, P> | null> {
+async findOne<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOneOptions<T, P, F> = {}): Promise<PartialLoaded<T, P, F> | null> {
     if (options.disableIdentityMap) {
       const em = this.getContext(false);
       const fork = em.fork();
-      const ret = await fork.findOne<T, P>(entityName, where, { ...options, disableIdentityMap: false });
+      const ret = await fork.findOne<T, P, F>(entityName, where, { ...options, disableIdentityMap: false });
       fork.clear();
 
       return ret;
@@ -357,7 +357,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
     }
 
     em.validator.validateParams(where);
-    options.populate = em.preparePopulate<T, P>(entityName, options) as unknown as Populate<T, P>;
+    options.populate = em.preparePopulate<T, P, F>(entityName, options) as unknown as Populate<T, P>;
     const cached = await em.tryCache<T, Loaded<T, P>>(entityName, options.cache, [entityName, 'em.findOne', options, where], options.refresh, true);
 
     if (cached?.data) {
@@ -372,7 +372,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
       return cached.data;
     }
 
-    const data = await em.driver.findOne<T, P>(entityName, where, { ctx: em.transactionContext, ...options });
+    const data = await em.driver.findOne<T, P, F>(entityName, where, { ctx: em.transactionContext, ...options });
 
     if (!data) {
       await em.storeCache(options.cache, cached!, null);
@@ -399,16 +399,16 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
    * You can override the factory for creating this method via `options.failHandler` locally
    * or via `Configuration.findOneOrFailHandler` (`findExactlyOneOrFailHandler` when specifying `strict`) globally.
    */
-  async findOneOrFail<T extends AnyEntity<T>, P extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOneOrFailOptions<T, P> = {}): Promise<Loaded<T, P>> {
-    let entity: Loaded<T, P> | null;
+  async findOneOrFail<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: EntityName<T>, where: FilterQuery<T>, options: FindOneOrFailOptions<T, P, F> = {}): Promise<PartialLoaded<T, P, F>> {
+    let entity: PartialLoaded<T, P, F> | null;
     let isStrictViolation = false;
 
     if (options.strict) {
-      const ret = await this.find(entityName, where, { ...options as FindOptions<T, P>, limit: 2 });
+      const ret = await this.find<T, P, F>(entityName, where, { ...options as FindOptions<T, P, F>, limit: 2 });
       isStrictViolation = ret.length !== 1;
       entity = ret[0];
     } else {
-      entity = await this.findOne(entityName, where, options);
+      entity = await this.findOne<T, P, F>(entityName, where, options);
     }
 
     if (!entity || isStrictViolation) {
@@ -1009,7 +1009,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
     }
   }
 
-  private async lockAndPopulate<T extends AnyEntity<T>, P extends string = never>(entityName: string, entity: T, where: FilterQuery<T>, options: FindOneOptions<T, P>): Promise<Loaded<T, P>> {
+  private async lockAndPopulate<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: string, entity: T, where: FilterQuery<T>, options: FindOneOptions<T, P, F>): Promise<PartialLoaded<T, P, F>> {
     if (options.lockMode === LockMode.OPTIMISTIC) {
       await this.lock(entity, options.lockMode, {
         lockVersion: options.lockVersion,
@@ -1017,7 +1017,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
       });
     }
 
-    const preparedPopulate = this.preparePopulate<T, P>(entityName, options);
+    const preparedPopulate = this.preparePopulate<T, P, F>(entityName, options);
     await this.entityLoader.populate(entityName, [entity], preparedPopulate, {
       ...options as Dictionary,
       ...this.getPopulateWhere(where, options),
@@ -1041,7 +1041,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
     }, [] as AutoPath<T, P>[]);
   }
 
-  private preparePopulate<T extends AnyEntity<T>, P extends string = never>(entityName: string, options: Pick<FindOptions<T, P>, 'populate' | 'strategy' | 'fields'>): PopulateOptions<T>[] {
+  private preparePopulate<T extends AnyEntity<T>, P extends string = never, F extends string = never>(entityName: string, options: Pick<FindOptions<T, P, F>, 'populate' | 'strategy' | 'fields'>): PopulateOptions<T>[] {
     // infer populate hint if only `fields` are available
     if (!options.populate && options.fields) {
       options.populate = this.buildFields(options.fields);
@@ -1079,7 +1079,7 @@ export class EntityManager<D extends IDatabaseDriver = IDatabaseDriver> {
    * when the entity is found in identity map, we check if it was partially loaded or we are trying to populate
    * some additional lazy properties, if so, we reload and merge the data from database
    */
-  protected shouldRefresh<T extends AnyEntity<T>, P extends string = never>(meta: EntityMetadata<T>, entity: T, options: FindOneOptions<T, P>) {
+  protected shouldRefresh<T extends AnyEntity<T>, P extends string = never, F extends string = never>(meta: EntityMetadata<T>, entity: T, options: FindOneOptions<T, P, F>) {
     if (!entity.__helper!.__initialized || options.refresh) {
       return true;
     }
