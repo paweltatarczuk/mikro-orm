@@ -93,7 +93,7 @@ type FieldsMap<T, P extends string = never> = { [K in keyof T]?: EntityField<Exp
 export type EntityField<T, P extends string = never> = keyof T | '*' | AutoPath<T, P, '*'> | FieldsMap<T, P>;
 
 export interface FindOptions<T, P extends string = never, F extends string = never> {
-  populate?: readonly AutoPath<T, P | F>[] | boolean;
+  populate?: readonly AutoPath<T, P>[] | boolean;
   populateWhere?: ObjectQuery<T> | PopulateHint;
   orderBy?: (QueryOrderMap<T> & { 0?: never }) | QueryOrderMap<T>[];
   cache?: boolean | number | [string, number];
@@ -102,7 +102,7 @@ export interface FindOptions<T, P extends string = never, F extends string = nev
   refresh?: boolean;
   convertCustomTypes?: boolean;
   disableIdentityMap?: boolean;
-  fields?: readonly EntityField<T, F>[];
+  fields?: readonly EntityField<T, F | P>[];
   schema?: string;
   flags?: QueryFlag[];
   groupBy?: string | string[];
