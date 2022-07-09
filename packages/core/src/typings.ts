@@ -660,14 +660,21 @@ export interface LoadedCollection<T> extends Collection<T> {
 type RemovePrefix<K, P extends string> = K extends `${P}.${infer S}` ? S : never;
 type Nofix<K> = K extends `${string}.${string}` ? never : K;
 
+type PartialLoadedLoadable<T, P extends string, F extends string> =
+  T extends Collection<infer CT, infer O> ? Collection<PartialLoaded<CT, P, F>, O> :
+  T extends Reference<infer RE> ? RE extends AnyEntity ? Reference<PartialLoaded<RE, P, F>> : never :
+  PartialLoaded<T, P, F>;
+
 export type PartialLoaded<T, P extends string, F extends string = never> =
   [F] extends [never] ? Loaded<T, P> :
-  T extends Collection<infer CT, infer O> ? Collection<PartialLoaded<CT, P, F>, O> :
-  T extends Reference<any> ? T :
   ({
-    [K in Extract<keyof T, Prefix<F>>]: K extends Nofix<F> ? T[K] : (K extends string ? PartialLoaded<T[K], RemovePrefix<P, K>, RemovePrefix<F, K>> : never);
+    [K in Extract<keyof T, Prefix<F>>]: K extends Nofix<F> ? T[K] : (
+      K extends string ? PartialLoadedLoadable<T[K], RemovePrefix<P, K>, RemovePrefix<F, K>> : never
+    );
   } & {
-    [K in Exclude<keyof T, Prefix<F>>]?: K extends Nofix<F> ? T[K] : (K extends string ? PartialLoaded<T[K], RemovePrefix<P, K>, RemovePrefix<F, K>> : never);
+    [K in Exclude<keyof T, Prefix<F>>]?: K extends Nofix<F> ? T[K] : (
+      K extends string ? PartialLoadedLoadable<T[K], RemovePrefix<P, K>, RemovePrefix<F, K>> : never
+    );
   });
 
 export type New<T extends AnyEntity<T>, P extends string = string> = Loaded<T, P>;
