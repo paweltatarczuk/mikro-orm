@@ -2415,4 +2415,19 @@ describe('EntityManagerMySql', () => {
     await orm.em.flush();
   });
 
+  test('repopulate partially loaded reference', async () => {
+    const bar = FooBar2.create('fb');
+    bar.baz = new FooBaz2('fz');
+    await orm.em.fork().persistAndFlush(bar);
+
+    const a1 = await orm.em.findOneOrFail(FooBaz2, bar.baz, {
+      fields: ['id'],
+    });
+
+    const a2 = await orm.em.findOneOrFail(FooBar2, bar.id, {
+      populate: ['baz.name'],
+    });
+    expect(a2.baz?.name).toBe('fz');
+  });
+
 });
